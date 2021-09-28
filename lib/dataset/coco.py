@@ -61,6 +61,7 @@ class COCODataset(JointsDataset):
         self.use_gt_bbox = cfg.TEST.USE_GT_BBOX
         self.image_width = cfg.MODEL.IMAGE_SIZE[0]
         self.image_height = cfg.MODEL.IMAGE_SIZE[1]
+        self.use_coco_api = cfg.DATASET.USE_API
         self.aspect_ratio = self.image_width * 1.0 / self.image_height
         self.pixel_std = 200
         self.coco = COCO(self._get_ann_file_keypoint())
@@ -179,7 +180,7 @@ class COCODataset(JointsDataset):
 
             center, scale = self._box2cs(obj['clean_bbox'][:4])
             rec.append({
-                'image': self.image_path_from_index(index),
+                'image': im_ann["coco_url"] if self.use_coco_api else self.image_path_from_index(index),
                 'center': center,
                 'scale': scale,
                 'joints_3d': joints_3d,

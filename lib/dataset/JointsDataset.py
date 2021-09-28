@@ -20,6 +20,7 @@ from torch.utils.data import Dataset
 from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
+from urllib.request import urlopen
 
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,13 @@ class JointsDataset(Dataset):
             data_numpy = zipreader.imread(
                 image_file, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
         else:
-            data_numpy = cv2.imread(
-                image_file, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+            if "http://" in image_file:
+                req = urlopen(image_file)
+                img = np.asarray(bytearray(req.read()), dtype="uint8")
+                data_numpy = cv2.imdecode(img, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+            else:
+                data_numpy = cv2.imread(
+                    image_file, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
 
         if data_numpy is None:
             logger.error('=> fail to read {}'.format(image_file))

@@ -74,6 +74,7 @@ config.DATASET.SELECT_DATA = False
 config.DATASET.FLIP = True
 config.DATASET.SCALE_FACTOR = 0.25
 config.DATASET.ROT_FACTOR = 30
+config.DATASET.USE_API = False
 
 # train
 config.TRAIN = edict()
