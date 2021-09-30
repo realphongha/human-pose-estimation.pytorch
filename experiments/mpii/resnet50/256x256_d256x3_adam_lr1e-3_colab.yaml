@@ -10,7 +10,7 @@ CUDNN:
   ENABLED: True
 DATASET:
   DATASET: mpii
-  ROOT: 'data/mpii/'
+  ROOT: '/content/drive/MyDrive/data/MPII/'
   TEST_SET: valid
   TRAIN_SET: train
   FLIP: true
@@ -48,7 +48,7 @@ TRAIN:
   SHUFFLE: true
   BEGIN_EPOCH: 0
   END_EPOCH: 140
-  RESUME: false
+  RESUME: true
   OPTIMIZER: adam
   LR: 0.001
   LR_FACTOR: 0.1
