@@ -10,7 +10,7 @@ CUDNN:
   ENABLED: True
 DATASET:
   DATASET: mpii
-  ROOT: '/content/drive/MyDrive/data/MPII/'
+  ROOT: 'data/mpii/'
   TEST_SET: valid
   TRAIN_SET: train
   FLIP: true

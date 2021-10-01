@@ -120,12 +120,23 @@ def main():
 
     if config.TEST.MODEL_FILE:
         logger.info('=> loading model from {}'.format(config.TEST.MODEL_FILE))
-        model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
+        state_dict = torch.load(config.TEST.MODEL_FILE)
     else:
         model_state_file = os.path.join(final_output_dir,
                                         'final_state.pth.tar')
         logger.info('=> loading model from {}'.format(model_state_file))
-        model.load_state_dict(torch.load(model_state_file))
+        state_dict = torch.load(model_state_file)
+
+    from collections import OrderedDict
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        if "module." in k:
+            name = k[7:]  # remove "module"
+        else:
+            name = k
+        new_state_dict[name] = v
+    state_dict = new_state_dict
+    model.load_state_dict(state_dict)
 
     gpus = [int(i) for i in config.GPUS.split(',')]
     model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
