@@ -15,11 +15,11 @@ import os
 import numpy as np
 import torch
 
-from core.config import get_model_name
-from core.evaluate import accuracy
-from core.inference import get_final_preds
-from utils.transforms import flip_back
-from utils.vis import save_debug_images
+from lib.core.config import get_model_name
+from lib.core.evaluate import accuracy
+from lib.core.inference import get_final_preds
+from lib.utils.transforms import flip_back
+from lib.utils.vis import save_debug_images
 
 
 logger = logging.getLogger(__name__)
