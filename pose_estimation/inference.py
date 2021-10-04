@@ -12,6 +12,7 @@ from __future__ import print_function
 
 import sys
 import os
+from tqdm import tqdm
 from pathlib import Path
 
 FILE = Path(__file__).resolve()
@@ -107,11 +108,23 @@ def reset_config(config, args):
     
     
 class Pose:
+
+    SKELETONS = {"coco":[
+            [16,14], [14,12], [17,15], [15,13], [12,13], [6,12], [7,13], 
+            [6,7], [6,8], [7,9], [8,10], [9,11], [2,3], [1,2], [1,3], [2,4], 
+            [3,5], [4,6], [5,7]
+        ],
+        "mpii": [[9, 10], [12, 13], [12, 11], [3, 2], [2, 1], [14, 15], 
+                 [15, 16], [4, 5], [5, 6], [9, 8], [8, 7], [7, 3], [7, 4], 
+                 [9, 13], [9, 14]
+        ]}
+
     def __init__(self, 
         det_model,
         pose_model,
         device,
         model_name,
+        dataset_name,
         img_size=640,
         conf_thres=0.25,
         iou_thres=0.45, 
@@ -131,12 +144,13 @@ class Pose:
             T.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
 
-        self.coco_skeletons = [
-            [16,14],[14,12],[17,15],[15,13],[12,13],[6,12],[7,13], [6,7],[6,8],
-            [7,9],[8,10],[9,11],[2,3],[1,2],[1,3],[2,4],[3,5],[4,6],[5,7]
-        ]
+        try:
+            self.skeleton = Pose.SKELETONS[dataset_name.lower()]
+        except KeyError:
+            self.skeleton = None
+        
 
-    def preprocess(self, image):
+    def preprocess(self, image):   
         img = letterbox(image, new_shape=self.img_size)
         img = np.ascontiguousarray(img.transpose((2, 0, 1)))
         img = torch.from_numpy(img).to(self.device)
@@ -146,7 +160,7 @@ class Pose:
 
     def box_to_center_scale(self, boxes, pixel_std=200):
         boxes = xyxy2xywh(boxes)
-        r = self.patch_size[0] / self.patch_size[1]
+        r = self.img_size[0] / self.img_size[1]
         mask = boxes[:, 2] > boxes[:, 3] * r
         boxes[mask, 3] = boxes[mask, 2] / r
         boxes[~mask, 2] = boxes[~mask, 3] * r
@@ -157,8 +171,12 @@ class Pose:
     def predict_poses(self, boxes, img):
         image_patches = []
         for cx, cy, w, h in boxes:
-            trans = get_affine_transform(np.array([cx, cy]), np.array([w, h]), self.patch_size)
-            img_patch = cv2.warpAffine(img, trans, self.patch_size, flags=cv2.INTER_LINEAR)
+            trans = get_affine_transform(np.array([cx, cy]), np.array([w, h]), self.img_size)
+            img_patch = cv2.warpAffine(
+                img, 
+                trans, 
+                (int(self.img_size[0]), int(self.img_size[1])), 
+                flags=cv2.INTER_LINEAR)
             img_patch = self.pose_transform(img_patch)
             image_patches.append(img_patch)
 
@@ -169,17 +187,22 @@ class Pose:
         pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, classes=0)
 
         for det in pred:
+
             if len(det):
                 boxes = scale_boxes(det[:, :4], img0.shape[:2], img1.shape[-2:]).cpu()
+                for box in boxes.numpy():
+                  x1, y1, x2, y2 = box
+                  x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                  img0 = cv2.rectangle(img0, (x1, y1), (x2, y2), (255, 0, 0), 1)
                 boxes = self.box_to_center_scale(boxes)
                 outputs = self.predict_poses(boxes, img0)
 
                 if 'simdr' in self.model_name:
-                    coords = get_simdr_final_preds(*outputs, boxes, self.patch_size)
+                    coords = get_simdr_final_preds(*outputs, boxes, self.img_size)
                 else:
                     coords = get_final_preds(outputs, boxes)
-
-                draw_keypoints(img0, coords, self.coco_skeletons)
+                    
+                draw_keypoints(img0, coords, self.skeleton, 1)
 
     @torch.no_grad()
     def predict(self, image):
@@ -214,35 +237,60 @@ def main(opt):
     pose_model.to(device)
     pose_model.eval()
     
-    pose = Pose(det_model, pose_model, device, config.MODEL.NAME)
-    source = Path("/content/1.jpeg")
+    pose = Pose(det_model, pose_model, device, config.MODEL.NAME, 
+                config.DATASET.DATASET, config.MODEL.IMAGE_SIZE)
+    source = Path(opt.source)
     if source.is_file() and source.suffix in ['.jpg', '.jpeg', '.png']:
-        image = cv2.imread(str(source))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.imread(str(source), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         output = pose.predict(image)
         cv2.imwrite(f"{str(source).rsplit('.', maxsplit=1)[0]}_out.jpg", cv2.cvtColor(output, cv2.COLOR_RGB2BGR))
 
     elif source.is_dir():
         files = source.glob("*.jpg")
         for file in files:
-            image = cv2.imread(str(file))
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = cv2.imread(str(file), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+            # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             output = pose.predict(image)
             cv2.imwrite(f"{str(file).rsplit('.', maxsplit=1)[0]}_out.jpg", cv2.cvtColor(output, cv2.COLOR_RGB2BGR))
 
-    elif source.is_file() and source.suffix in ['.mp4', '.avi']:
-        reader = VideoReader(args.source)
-        writer = VideoWriter(f"{args.source.rsplit('.', maxsplit=1)[0]}_out.mp4", reader.fps)
-        fps = FPS(len(reader.frames))
+    elif source.is_file() and source.suffix in ['.mp4', '.avi', '.mkv']:
+        video_out = f"{opt.source.rsplit('.', maxsplit=1)[0]}_out.mp4"
+        video_reader = cv2.VideoCapture(opt.source)
 
-        for frame in tqdm(reader):
-            fps.start()
-            output = pose.predict(frame.numpy())
-            fps.stop(False)
-            writer.update(output)
+        nb_frames = int(video_reader.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_h = int(video_reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_w = int(video_reader.get(cv2.CAP_PROP_FRAME_WIDTH))
+        fps = int(video_reader.get(cv2.CAP_PROP_FPS))
         
-        print(f"FPS: {fps.fps}")
-        writer.write()
+        video_writer = cv2.VideoWriter(video_out,
+                                cv2.VideoWriter_fourcc(*'MPEG'), 
+                                fps, 
+                                (frame_w, frame_h))
+
+        for i in tqdm(range(nb_frames)):
+            _, frame = video_reader.read()
+            if frame is None:
+                continue
+            frame = pose.predict(frame)
+            video_writer.write(np.uint8(frame))
+
+        video_reader.release()
+        video_writer.release()
+        
+        # reader = VideoReader(opt.source)
+        # writer = VideoWriter(f"{opt.source.rsplit('.', maxsplit=1)[0]}_out.mp4", reader.fps)
+        # print("bbb")
+        # fps = FPS(len(reader.frames))
+
+        # for frame in tqdm(reader):
+        #     fps.start()
+        #     output = pose.predict(frame.numpy())
+        #     fps.stop(False)
+        #     writer.update(output)
+        
+        # print(f"FPS: {fps.fps}")
+        # writer.write()
 
     else:
         webcam = WebcamStream()

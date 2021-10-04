@@ -13,9 +13,14 @@ import lib.models.pose_hrnet
 import lib.models.pose_hrnet_psa
 import lib.models.pose_resnet_psa
 
+from lib.models.pose_resnet import get_pose_net as pr
+from lib.models.pose_hrnet import get_pose_net as ph
+from lib.models.pose_hrnet_psa import get_pose_net as php
+from lib.models.pose_resnet_psa import get_pose_net as prp
+
 MODELS = {
-    "pose_resnet": pose_resnet.get_pose_net,
-    "pose_hrnet": pose_hrnet.get_pose_net,
-    "pose_hrnet_psa": pose_hrnet_psa.get_pose_net,
-    "pose_resnet_psa": pose_resnet_psa.get_pose_net,
+    "pose_resnet": pr,
+    "pose_hrnet": ph,
+    "pose_hrnet_psa": php,
+    "pose_resnet_psa": prp,
 }

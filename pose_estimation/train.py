@@ -89,7 +89,8 @@ def main():
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
-    model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
+    from lib.models import MODELS
+    model = MODELS[config.MODEL.NAME](
         config, is_train=True
     )
 
