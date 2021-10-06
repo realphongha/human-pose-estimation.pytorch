@@ -14,6 +14,7 @@ import sys
 import os
 from tqdm import tqdm
 from pathlib import Path
+from time import time
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0].parents[0]  # YOLOv5 root directory
@@ -72,6 +73,7 @@ def parse_opt():
     parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
     parser.add_argument('--nosave', action='store_true', help='do not save images/videos')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
+    parser.add_argument('--person_class', default=0, type=int, help='person class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--visualize', action='store_true', help='visualize features')
@@ -125,6 +127,7 @@ class Pose:
         device,
         model_name,
         dataset_name,
+        opt,
         img_size=640,
         conf_thres=0.25,
         iou_thres=0.45, 
@@ -184,25 +187,34 @@ class Pose:
         return self.pose_model(image_patches)
 
     def postprocess(self, pred, img1, img0):
-        pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, classes=0)
+        classes = opt.classes
+        classes.append(opt.person_class)
+        pred = non_max_suppression(pred, self.conf_thres, self.iou_thres, classes=classes)
 
         for det in pred:
 
             if len(det):
+                box_class = int(det[0][5])
+                if box_class != opt.person_class and box_class not in opt.classes:
+                    continue
                 boxes = scale_boxes(det[:, :4], img0.shape[:2], img1.shape[-2:]).cpu()
                 for box in boxes.numpy():
-                  x1, y1, x2, y2 = box
-                  x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                  img0 = cv2.rectangle(img0, (x1, y1), (x2, y2), (255, 0, 0), 1)
-                boxes = self.box_to_center_scale(boxes)
-                outputs = self.predict_poses(boxes, img0)
+                    x1, y1, x2, y2 = box
+                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                    img0 = cv2.rectangle(img0, (x1, y1), (x2, y2), (255, 0, 0), 1)
+                    cv2.putText(img0, str(box_class), (x1, y1), 
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1, (255, 0, 0), 2, cv2.LINE_AA)
+                if box_class == opt.person_class:
+                    boxes = self.box_to_center_scale(boxes)
+                    outputs = self.predict_poses(boxes, img0)
 
-                if 'simdr' in self.model_name:
-                    coords = get_simdr_final_preds(*outputs, boxes, self.img_size)
-                else:
-                    coords = get_final_preds(outputs, boxes)
+                    if 'simdr' in self.model_name:
+                        coords = get_simdr_final_preds(*outputs, boxes, self.img_size)
+                    else:
+                        coords = get_final_preds(outputs, boxes)
                     
-                draw_keypoints(img0, coords, self.skeleton, 1)
+                    draw_keypoints(img0, coords, self.skeleton, 1)
 
     @torch.no_grad()
     def predict(self, image):
@@ -238,7 +250,7 @@ def main(opt):
     pose_model.eval()
     
     pose = Pose(det_model, pose_model, device, config.MODEL.NAME, 
-                config.DATASET.DATASET, config.MODEL.IMAGE_SIZE)
+                config.DATASET.DATASET, opt, config.MODEL.IMAGE_SIZE)
     source = Path(opt.source)
     if source.is_file() and source.suffix in ['.jpg', '.jpeg', '.png']:
         image = cv2.imread(str(source), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
@@ -269,29 +281,19 @@ def main(opt):
                                 (frame_w, frame_h))
 
         for i in tqdm(range(nb_frames)):
+            begin = time()
             _, frame = video_reader.read()
             if frame is None:
                 continue
             frame = pose.predict(frame)
+            fps = 1/(time()-begin)
+            cv2.putText(frame, "%.2f" % fps, (0, frame_h-5), 
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        2, (0, 0, 255), 2, cv2.LINE_AA)
             video_writer.write(np.uint8(frame))
 
         video_reader.release()
         video_writer.release()
-        
-        # reader = VideoReader(opt.source)
-        # writer = VideoWriter(f"{opt.source.rsplit('.', maxsplit=1)[0]}_out.mp4", reader.fps)
-        # print("bbb")
-        # fps = FPS(len(reader.frames))
-
-        # for frame in tqdm(reader):
-        #     fps.start()
-        #     output = pose.predict(frame.numpy())
-        #     fps.stop(False)
-        #     writer.update(output)
-        
-        # print(f"FPS: {fps.fps}")
-        # writer.write()
-
     else:
         webcam = WebcamStream()
         fps = FPS()
